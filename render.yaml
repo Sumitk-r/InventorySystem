@@ -19,7 +19,7 @@ services:
     rootDir: frontend
     envVars:
       - key: VITE_API_BASE
-        value: https://inventory-system-api.onrender.com/api
+        value: https://inventory-system-api-mzjz.onrender.com/api
     routes:
       - type: rewrite
         source: /*
