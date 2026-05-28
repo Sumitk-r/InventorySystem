@@ -9,7 +9,7 @@ services:
       - key: INVENTORY_DB
         value: /tmp/inventory.db
       - key: CORS_ORIGINS
-        value: https://inventory-system-web.onrender.com
+        value: https://inventory-system-web-ehzg.onrender.com
 
   - type: web
     name: inventory-system-web
