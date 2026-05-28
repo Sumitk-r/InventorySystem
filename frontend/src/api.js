@@ -53,3 +53,7 @@ export function downloadUrl(path) {
   }
   return url.toString();
 }
+
+export function apiUrl(path) {
+  return `${API_BASE}${path}`;
+}

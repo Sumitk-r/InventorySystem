@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { api, getToken, setToken } from "./api";
+import { api, apiUrl, getToken, setToken } from "./api";
 import "./styles.css";
 
 const emptyDepartment = { name: "", code: "", contact_email: "" };
@@ -779,7 +779,7 @@ function isOverdue(value) {
 
 async function downloadWithAuth(path, filename) {
   const token = getToken();
-  const response = await fetch(`http://127.0.0.1:8000/api${path}`, {
+  const response = await fetch(apiUrl(path), {
     headers: { Authorization: `Bearer ${token}` },
   });
   if (!response.ok) throw new Error("Download failed");
