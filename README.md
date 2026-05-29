@@ -113,3 +113,18 @@ The FastAPI backend migrates the existing database in place on startup. It prese
 - `assets.location_id`
 
 Back up `inventory.db` regularly.
+
+## Email Notifications
+
+Assignment and return emails are sent only when SMTP environment variables are configured:
+
+```text
+SMTP_HOST=smtp.example.com
+SMTP_PORT=587
+SMTP_USERNAME=your-smtp-username
+SMTP_PASSWORD=your-smtp-password
+SMTP_FROM=inventory@example.com
+SMTP_TLS=true
+```
+
+If these values are not configured, the app still assigns and returns assets normally, but skips email sending.

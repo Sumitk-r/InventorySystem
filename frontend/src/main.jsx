@@ -644,6 +644,10 @@ function Reports({ data }) {
       <ReportSection title="Due This Week" rows={sections.due_soon || []} />
       <ReportSection title="Assigned In Range" rows={sections.assigned_in_range || []} />
       <ReportSection title="Returned In Range" rows={sections.returned_in_range || []} />
+      <AssetReportSection title="Available Asset Report" rows={sections.available_assets || []} />
+      <ReportSection title="Assigned Assets Report" rows={sections.assigned_assets || []} />
+      <AssetReportSection title="Assets Under Maintenance" rows={sections.maintenance_assets || []} />
+      <ReportSection title="Returned Assets Report" rows={sections.returned_assets || []} />
     </>
   );
 }
@@ -659,6 +663,21 @@ function ReportSection({ title, rows }) {
         row.assigned_on,
         row.expected_return_on || "",
         row.returned_on || "",
+      ]} />
+    </section>
+  );
+}
+
+function AssetReportSection({ title: sectionTitle, rows }) {
+  return (
+    <section className="panel">
+      <div className="panel-header"><h2>{sectionTitle}</h2></div>
+      <DataTable columns={["Asset", "Category", "Status", "Location", "Condition"]} rows={rows} render={(row) => [
+        `${row.asset_tag} - ${row.name}`,
+        row.category_name || "",
+        row.status_name || title(row.status),
+        row.location_name || row.location || "",
+        row.condition || "",
       ]} />
     </section>
   );

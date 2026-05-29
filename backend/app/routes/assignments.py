@@ -4,6 +4,7 @@ from fastapi import APIRouter, HTTPException
 
 from ..db import CONDITIONS, audit, get_status_by_kind, rows_to_dicts
 from ..deps import AdminUser, Db, User
+from ..emailer import send_assignment_email, send_return_email
 from ..schemas import AssignmentPayload, ReturnPayload
 
 
@@ -88,6 +89,7 @@ def create_assignment(payload: AssignmentPayload, conn: Db, user: AdminUser):
     )
     audit(conn, user["id"], "assign", "assignment", cur.lastrowid, f"{asset['asset_tag']} to {person['full_name']}")
     conn.commit()
+    send_assignment_email(person, asset, payload.assigned_on, payload.expected_return_on)
     return {"id": cur.lastrowid}
 
 
@@ -97,9 +99,11 @@ def return_assignment(assignment_id: int, payload: ReturnPayload, conn: Db, user
         raise HTTPException(status_code=400, detail=f"Condition must be one of: {', '.join(CONDITIONS)}")
     assignment = conn.execute(
         """
-        SELECT aa.*, assets.asset_tag
+        SELECT aa.*, assets.asset_tag, assets.name,
+               people.full_name, people.email
         FROM asset_assignments aa
         JOIN assets ON assets.id = aa.asset_id
+        JOIN people ON people.id = aa.person_id
         WHERE aa.id = ? AND aa.status = 'active'
         """,
         (assignment_id,),
@@ -133,4 +137,5 @@ def return_assignment(assignment_id: int, payload: ReturnPayload, conn: Db, user
     )
     audit(conn, user["id"], "return", "assignment", assignment_id, assignment["asset_tag"])
     conn.commit()
+    send_return_email(assignment, assignment, payload.returned_on, payload.return_condition)
     return {"ok": True}

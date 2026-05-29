@@ -103,16 +103,16 @@ def weekly_report_csv(conn: Db, user: User, from_date: Optional[str] = None, to_
             writer.writerow(
                 [
                     section,
-                    row["asset_tag"],
-                    row["asset_name"],
-                    row["person_name"],
-                    row["department_name"] or "",
-                    row["assigned_on"],
-                    row["expected_return_on"] or "",
-                    row["returned_on"] or "",
-                    row["return_condition"] or "",
-                    row["status"],
-                    row["notes"] or "",
+                    row.get("asset_tag", ""),
+                    row.get("asset_name") or row.get("name", ""),
+                    row.get("person_name", ""),
+                    row.get("department_name") or "",
+                    row.get("assigned_on", ""),
+                    row.get("expected_return_on") or "",
+                    row.get("returned_on") or "",
+                    row.get("return_condition") or "",
+                    row.get("status_name") or row.get("status", ""),
+                    row.get("notes") or "",
                 ]
             )
     return Response(
@@ -134,6 +134,16 @@ def report_range(from_date: Optional[str], to_date: Optional[str]) -> Tuple[str,
 
 def build_weekly_report(conn, start: str, end: str) -> dict:
     today = date.today().isoformat()
+    asset_select = """
+        SELECT assets.*, asset_categories.name AS category_name,
+               asset_statuses.name AS status_name,
+               asset_statuses.kind AS status_kind,
+               locations.name AS location_name
+        FROM assets
+        LEFT JOIN asset_categories ON asset_categories.id = assets.category_id
+        LEFT JOIN asset_statuses ON asset_statuses.id = assets.status_id
+        LEFT JOIN locations ON locations.id = assets.location_id
+    """
     base_select = """
         SELECT aa.*, assets.asset_tag, assets.name AS asset_name,
                people.full_name AS person_name, people.person_type,
@@ -179,9 +189,41 @@ def build_weekly_report(conn, start: str, end: str) -> dict:
         """,
         (start, end),
     ).fetchall()
+    available_assets = conn.execute(
+        f"""
+        {asset_select}
+        WHERE asset_statuses.kind = 'available'
+        ORDER BY assets.asset_tag
+        """
+    ).fetchall()
+    assigned_assets = conn.execute(
+        f"""
+        {base_select}
+        WHERE aa.status = 'active'
+        ORDER BY COALESCE(aa.expected_return_on, '9999-12-31'), aa.assigned_on DESC
+        """
+    ).fetchall()
+    maintenance_assets = conn.execute(
+        f"""
+        {asset_select}
+        WHERE asset_statuses.kind = 'maintenance'
+        ORDER BY assets.asset_tag
+        """
+    ).fetchall()
+    returned_assets = conn.execute(
+        f"""
+        {base_select}
+        WHERE aa.status IN ('returned', 'lost')
+        ORDER BY aa.returned_on DESC, aa.created_at DESC
+        """
+    ).fetchall()
     return {
         "overdue": rows_to_dicts(overdue),
         "due_soon": rows_to_dicts(due_soon),
         "assigned_in_range": rows_to_dicts(assigned),
         "returned_in_range": rows_to_dicts(returned),
+        "available_assets": rows_to_dicts(available_assets),
+        "assigned_assets": rows_to_dicts(assigned_assets),
+        "maintenance_assets": rows_to_dicts(maintenance_assets),
+        "returned_assets": rows_to_dicts(returned_assets),
     }
