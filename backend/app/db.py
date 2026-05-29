@@ -180,6 +180,24 @@ def seed_master_data(conn: sqlite3.Connection) -> None:
             """,
             ("admin", hash_password("admin1234"), "System Administrator"),
         )
+    reset_admin_password = os.environ.get("RESET_ADMIN_PASSWORD", "").strip()
+    if reset_admin_password:
+        cur = conn.execute(
+            """
+            UPDATE users
+            SET password_hash = ?, active = 1, updated_at = CURRENT_TIMESTAMP
+            WHERE username = 'admin'
+            """,
+            (hash_password(reset_admin_password),),
+        )
+        if cur.rowcount == 0:
+            conn.execute(
+                """
+                INSERT INTO users(username, password_hash, full_name, role)
+                VALUES (?, ?, ?, 'admin')
+                """,
+                ("admin", hash_password(reset_admin_password), "System Administrator"),
+            )
 
 
 def migrate_existing_assets(conn: sqlite3.Connection) -> None:
