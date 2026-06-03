@@ -153,17 +153,30 @@ def build_weekly_report(conn, start: str, end: str) -> dict:
         JOIN people ON people.id = aa.person_id
         LEFT JOIN departments ON departments.id = people.department_id
     """
-    overdue = conn.execute(
-        f"""
-        SELECT *, CAST(julianday(?) - julianday(expected_return_on) AS INTEGER) AS days_late
-        FROM ({base_select})
-        WHERE status = 'active'
-          AND expected_return_on IS NOT NULL
-          AND expected_return_on < ?
-        ORDER BY expected_return_on ASC
-        """,
-        (today, today),
-    ).fetchall()
+    if getattr(conn, "is_postgres", False):
+        overdue = conn.execute(
+            f"""
+            SELECT *, (?::date - expected_return_on::date) AS days_late
+            FROM ({base_select}) AS report_rows
+            WHERE status = 'active'
+              AND expected_return_on IS NOT NULL
+              AND expected_return_on < ?
+            ORDER BY expected_return_on ASC
+            """,
+            (today, today),
+        ).fetchall()
+    else:
+        overdue = conn.execute(
+            f"""
+            SELECT *, CAST(julianday(?) - julianday(expected_return_on) AS INTEGER) AS days_late
+            FROM ({base_select})
+            WHERE status = 'active'
+              AND expected_return_on IS NOT NULL
+              AND expected_return_on < ?
+            ORDER BY expected_return_on ASC
+            """,
+            (today, today),
+        ).fetchall()
     due_soon = conn.execute(
         f"""
         {base_select}

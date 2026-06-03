@@ -238,7 +238,7 @@ function Dashboard({ data, setPage }) {
         <DataTable
           columns={["Due", "Asset", "Assigned To", "Department"]}
           rows={overdue}
-          render={(row) => [row.expected_return_on, `${row.asset_tag} - ${row.asset_name}`, row.person_name, row.department_name || "Unassigned"]}
+          render={(row) => [formatDate(row.expected_return_on), `${row.asset_tag} - ${row.asset_name}`, row.person_name, row.department_name || "Unassigned"]}
         />
       </section>
     </>
@@ -539,8 +539,8 @@ function Assets({ data, user, mutate }) {
             <Select label="Status" value={form.status_id} onChange={(status_id) => setForm({ ...form, status_id })} rows={(data.statuses || []).filter((row) => row.active || row.id === form.status_id)} />
             <Select label="Location" value={form.location_id} onChange={(location_id) => setForm({ ...form, location_id })} rows={(data.locations || []).filter((row) => row.active || row.id === form.location_id)} />
             <label><span>Serial Number</span><input value={form.serial_number} onChange={(event) => setForm({ ...form, serial_number: event.target.value })} /></label>
-            <label><span>Purchase Date</span><input type="date" value={form.purchase_date} onChange={(event) => setForm({ ...form, purchase_date: event.target.value })} /></label>
-            <label><span>Warranty End</span><input type="date" value={form.warranty_end} onChange={(event) => setForm({ ...form, warranty_end: event.target.value })} /></label>
+            <DateInput label="Purchase Date" value={form.purchase_date} onChange={(purchase_date) => setForm({ ...form, purchase_date })} />
+            <DateInput label="Warranty End" value={form.warranty_end} onChange={(warranty_end) => setForm({ ...form, warranty_end })} />
             <label><span>Condition</span><select value={form.condition} onChange={(event) => setForm({ ...form, condition: event.target.value })}>{conditions.map((condition) => <option key={condition}>{condition}</option>)}</select></label>
             <label className="span-2"><span>Notes</span><textarea value={form.notes} onChange={(event) => setForm({ ...form, notes: event.target.value })} /></label>
             <FormActions onClear={reset} />
@@ -555,7 +555,7 @@ function Assets({ data, user, mutate }) {
           row.location_name || row.location || "",
           row.condition,
           row.assigned_to || "",
-          row.expected_return_on || "",
+          formatDate(row.expected_return_on),
           isAdmin && <button className="button small" onClick={() => startEdit(row)}>Edit</button>,
         ]} />
       </section>
@@ -598,8 +598,8 @@ function Assignments({ data, user, mutate }) {
           <form className="form-grid" onSubmit={submit}>
             <Select label="Available Asset" value={form.asset_id} onChange={(asset_id) => setForm({ ...form, asset_id })} rows={assignableAssets} labelKey={(row) => `${row.asset_tag} - ${row.name}`} required />
             <Select label="Assign To" value={form.person_id} onChange={(person_id) => setForm({ ...form, person_id })} rows={(data.people || []).filter((row) => row.active)} labelKey={(row) => row.full_name} required />
-            <label><span>Assigned On</span><input type="date" value={form.assigned_on} onChange={(event) => setForm({ ...form, assigned_on: event.target.value })} required /></label>
-            <label><span>Expected Return</span><input type="date" value={form.expected_return_on} onChange={(event) => setForm({ ...form, expected_return_on: event.target.value })} /></label>
+            <DateInput label="Assigned On" value={form.assigned_on} onChange={(assigned_on) => setForm({ ...form, assigned_on })} required />
+            <DateInput label="Expected Return" value={form.expected_return_on} onChange={(expected_return_on) => setForm({ ...form, expected_return_on })} />
             <label className="span-2"><span>Notes</span><textarea value={form.notes} onChange={(event) => setForm({ ...form, notes: event.target.value })} /></label>
             <div className="span-2"><button className="button primary">Assign Asset</button></div>
           </form>
@@ -611,8 +611,8 @@ function Assignments({ data, user, mutate }) {
           `${row.asset_tag} - ${row.asset_name}`,
           row.person_name,
           row.department_name || "Unassigned",
-          row.assigned_on,
-          row.expected_return_on || "",
+          formatDate(row.assigned_on),
+          formatDate(row.expected_return_on),
           isOverdue(row.expected_return_on) ? <Badge tone="danger">Overdue</Badge> : <Badge tone="info">Active</Badge>,
           isAdmin && <select onChange={(event) => event.target.value && markReturn(row, event.target.value)} defaultValue=""><option value="">Return...</option>{conditions.map((condition) => <option key={condition}>{condition}</option>)}</select>,
         ]} />
@@ -623,8 +623,8 @@ function Assignments({ data, user, mutate }) {
           `${row.asset_tag} - ${row.asset_name}`,
           row.person_name,
           row.department_name || "Unassigned",
-          row.assigned_on,
-          row.returned_on || "",
+          formatDate(row.assigned_on),
+          formatDate(row.returned_on),
           row.return_condition || "",
         ]} />
       </section>
@@ -660,9 +660,9 @@ function ReportSection({ title, rows }) {
         `${row.asset_tag} - ${row.asset_name}`,
         row.person_name,
         row.department_name || "Unassigned",
-        row.assigned_on,
-        row.expected_return_on || "",
-        row.returned_on || "",
+        formatDate(row.assigned_on),
+        formatDate(row.expected_return_on),
+        formatDate(row.returned_on),
       ]} />
     </section>
   );
@@ -767,6 +767,83 @@ function Select({ label, value, onChange, rows, labelKey = (row) => row.name, re
   );
 }
 
+function DateInput({ label, value, onChange, required = false }) {
+  const [text, setText] = useState(formatDate(value));
+  const [open, setOpen] = useState(false);
+  const [visibleMonth, setVisibleMonth] = useState(monthFromValue(value));
+
+  useEffect(() => {
+    setText(formatDate(value));
+    setVisibleMonth(monthFromValue(value));
+  }, [value]);
+
+  function commit(nextText) {
+    const parsed = parseDisplayDate(nextText);
+    if (parsed || !nextText.trim()) {
+      onChange(parsed);
+      if (parsed) setVisibleMonth(monthFromValue(parsed));
+    }
+  }
+
+  function pickDate(nextValue) {
+    onChange(nextValue);
+    setText(formatDate(nextValue));
+    setVisibleMonth(monthFromValue(nextValue));
+    setOpen(false);
+  }
+
+  return (
+    <label className="date-field">
+      <span>{label}</span>
+      <div className="date-control">
+        <input
+          value={text}
+          placeholder="DD/MM/YYYY"
+          required={required}
+          pattern="[0-9]{2}/[0-9]{2}/[0-9]{4}"
+          inputMode="numeric"
+          title="Use DD/MM/YYYY"
+          onBlur={(event) => commit(event.target.value)}
+          onChange={(event) => setText(event.target.value)}
+        />
+        <button className="date-button" type="button" onClick={() => setOpen((current) => !current)} aria-label={`Pick ${label}`} title={`Pick ${label}`}>
+          <span className="calendar-icon" aria-hidden="true"></span>
+        </button>
+      </div>
+      {open && <CalendarPicker value={value} visibleMonth={visibleMonth} setVisibleMonth={setVisibleMonth} onPick={pickDate} />}
+    </label>
+  );
+}
+
+function CalendarPicker({ value, visibleMonth, setVisibleMonth, onPick }) {
+  const days = calendarDays(visibleMonth);
+  const monthLabel = visibleMonth.toLocaleDateString("en-GB", { month: "long", year: "numeric" });
+  return (
+    <div className="calendar-popover">
+      <div className="calendar-header">
+        <button type="button" onClick={() => setVisibleMonth(addMonths(visibleMonth, -1))}>Prev</button>
+        <strong>{monthLabel}</strong>
+        <button type="button" onClick={() => setVisibleMonth(addMonths(visibleMonth, 1))}>Next</button>
+      </div>
+      <div className="calendar-grid calendar-weekdays">
+        {["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"].map((day) => <span key={day}>{day}</span>)}
+      </div>
+      <div className="calendar-grid">
+        {days.map((day) => (
+          <button
+            className={`${day.inMonth ? "" : "muted"} ${day.value === value ? "selected" : ""}`}
+            key={day.value}
+            type="button"
+            onClick={() => onPick(day.value)}
+          >
+            {day.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function FormActions({ onClear }) {
   return (
     <div className="form-actions">
@@ -782,6 +859,55 @@ function Badge({ tone = "neutral", children }) {
 
 function title(value = "") {
   return String(value).replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function formatDate(value) {
+  if (!value) return "";
+  const [year, month, day] = String(value).slice(0, 10).split("-");
+  if (!year || !month || !day) return value;
+  return `${day}/${month}/${year}`;
+}
+
+function parseDisplayDate(value) {
+  const clean = String(value || "").trim();
+  if (!clean) return "";
+  const match = clean.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (!match) return "";
+  const [, day, month, year] = match;
+  return `${year}-${month}-${day}`;
+}
+
+function monthFromValue(value) {
+  const clean = value || today();
+  const [year, month] = clean.split("-").map(Number);
+  return new Date(year || new Date().getFullYear(), (month || new Date().getMonth() + 1) - 1, 1);
+}
+
+function addMonths(date, amount) {
+  return new Date(date.getFullYear(), date.getMonth() + amount, 1);
+}
+
+function calendarDays(monthDate) {
+  const start = new Date(monthDate.getFullYear(), monthDate.getMonth(), 1);
+  const mondayOffset = (start.getDay() + 6) % 7;
+  const first = new Date(start);
+  first.setDate(start.getDate() - mondayOffset);
+  return Array.from({ length: 42 }, (_, index) => {
+    const day = new Date(first);
+    day.setDate(first.getDate() + index);
+    return {
+      inMonth: day.getMonth() === monthDate.getMonth(),
+      label: day.getDate(),
+      value: isoDate(day),
+    };
+  });
+}
+
+function isoDate(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 function numberOrNull(value) {

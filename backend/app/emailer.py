@@ -1,41 +1,49 @@
 from __future__ import annotations
 
+import logging
 import os
-import smtplib
-from email.message import EmailMessage
 from typing import Optional
 
+import boto3
+from botocore.exceptions import BotoCoreError, ClientError
 
-def smtp_enabled() -> bool:
-    return bool(os.environ.get("SMTP_HOST") and os.environ.get("SMTP_FROM"))
+
+def ses_region() -> str:
+    return os.environ.get("AWS_SES_REGION") or os.environ.get("AWS_REGION") or "us-east-1"
+
+
+def ses_sender() -> str:
+    return os.environ.get("AWS_SES_FROM", "").strip()
+
+
+def ses_enabled() -> bool:
+    return bool(ses_sender())
 
 
 def send_email(to_email: Optional[str], subject: str, body: str) -> bool:
-    if not to_email or not smtp_enabled():
+    logger = logging.getLogger(__name__)
+
+    if not to_email:
+        logger.warning("send_email: no recipient address provided; skipping send")
+        return False
+    if not ses_enabled():
+        logger.warning("send_email: Amazon SES not configured (AWS_SES_FROM missing); skipping send to %s", to_email)
         return False
 
-    host = os.environ["SMTP_HOST"]
-    port = int(os.environ.get("SMTP_PORT", "587"))
-    username = os.environ.get("SMTP_USERNAME", "")
-    password = os.environ.get("SMTP_PASSWORD", "")
-    from_email = os.environ["SMTP_FROM"]
-    use_tls = os.environ.get("SMTP_TLS", "true").lower() not in {"0", "false", "no"}
-
-    message = EmailMessage()
-    message["From"] = from_email
-    message["To"] = to_email
-    message["Subject"] = subject
-    message.set_content(body)
-
     try:
-        with smtplib.SMTP(host, port, timeout=10) as server:
-            if use_tls:
-                server.starttls()
-            if username:
-                server.login(username, password)
-            server.send_message(message)
+        client = boto3.client("ses", region_name=ses_region())
+        client.send_email(
+            Source=ses_sender(),
+            Destination={"ToAddresses": [to_email]},
+            Message={
+                "Subject": {"Data": subject, "Charset": "UTF-8"},
+                "Body": {"Text": {"Data": body, "Charset": "UTF-8"}},
+            },
+        )
+        logger.info("send_email: Amazon SES message sent to %s subject=%s", to_email, subject)
         return True
-    except Exception:
+    except (BotoCoreError, ClientError):
+        logger.exception("send_email: Amazon SES failed to send email to %s", to_email)
         return False
 
 

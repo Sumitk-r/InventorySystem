@@ -6,8 +6,10 @@ services:
     buildCommand: pip install -r requirements.txt
     startCommand: python -m uvicorn backend.app.main:app --host 0.0.0.0 --port $PORT
     envVars:
-      - key: INVENTORY_DB
-        value: /tmp/inventory.db
+      - key: DATABASE_URL
+        fromDatabase:
+          name: inventory-system-db
+          property: connectionString
       - key: CORS_ORIGINS
         value: https://inventory-system-web-ehzg.onrender.com
 
@@ -24,3 +26,9 @@ services:
       - type: rewrite
         source: /*
         destination: /index.html
+
+databases:
+  - name: inventory-system-db
+    plan: free
+    databaseName: inventory_system
+    user: inventory_system

@@ -99,13 +99,33 @@ Rules:
 
 ## Database
 
-The database remains SQLite:
+By default, local development uses SQLite:
 
 ```text
 inventory.db
 ```
 
-The FastAPI backend migrates the existing database in place on startup. It preserves old data and adds:
+For production, set `DATABASE_URL` to a PostgreSQL connection string:
+
+```text
+DATABASE_URL=postgresql://user:password@host:5432/database
+```
+
+When `DATABASE_URL` is set, the FastAPI backend creates and uses PostgreSQL tables instead of SQLite.
+
+To migrate a local SQLite database into PostgreSQL:
+
+```bash
+python scripts/migrate_sqlite_to_postgres.py
+```
+
+The script reads `inventory.db` by default. To use another SQLite file:
+
+```bash
+SQLITE_DB=/path/to/inventory.db python scripts/migrate_sqlite_to_postgres.py
+```
+
+The FastAPI backend migrates the existing SQLite database in place on startup. It preserves old data and adds:
 
 - `asset_statuses`
 - `locations`
@@ -116,15 +136,17 @@ Back up `inventory.db` regularly.
 
 ## Email Notifications
 
-Assignment and return emails are sent only when SMTP environment variables are configured:
+Assignment and return emails are sent through Amazon SES using the AWS SDK for Python.
+
+Set these backend environment variables:
 
 ```text
-SMTP_HOST=smtp.example.com
-SMTP_PORT=587
-SMTP_USERNAME=your-smtp-username
-SMTP_PASSWORD=your-smtp-password
-SMTP_FROM=inventory@example.com
-SMTP_TLS=true
+AWS_ACCESS_KEY_ID=your-iam-access-key
+AWS_SECRET_ACCESS_KEY=your-iam-secret-key
+AWS_REGION=ap-south-1
+AWS_SES_FROM=inventory@yourdomain.com
 ```
+
+`AWS_SES_FROM` must be a verified SES email address or a sender under a verified SES domain. If your AWS SES account is still in sandbox mode, recipients must also be verified in SES.
 
 If these values are not configured, the app still assigns and returns assets normally, but skips email sending.

@@ -89,7 +89,13 @@ def create_assignment(payload: AssignmentPayload, conn: Db, user: AdminUser):
     )
     audit(conn, user["id"], "assign", "assignment", cur.lastrowid, f"{asset['asset_tag']} to {person['full_name']}")
     conn.commit()
-    send_assignment_email(person, asset, payload.assigned_on, payload.expected_return_on)
+    try:
+        sent = send_assignment_email(person, asset, payload.assigned_on, payload.expected_return_on)
+    except Exception:
+        sent = False
+    if not sent:
+        audit(conn, user["id"], "email_failed", "assignment", cur.lastrowid, f"assignment email failed to {row_value(person, 'email') or 'no-email'}")
+        conn.commit()
     return {"id": cur.lastrowid}
 
 
@@ -137,5 +143,15 @@ def return_assignment(assignment_id: int, payload: ReturnPayload, conn: Db, user
     )
     audit(conn, user["id"], "return", "assignment", assignment_id, assignment["asset_tag"])
     conn.commit()
-    send_return_email(assignment, assignment, payload.returned_on, payload.return_condition)
+    try:
+        sent = send_return_email(assignment, assignment, payload.returned_on, payload.return_condition)
+    except Exception:
+        sent = False
+    if not sent:
+        audit(conn, user["id"], "email_failed", "assignment", assignment_id, f"return email failed to {row_value(assignment, 'email') or 'no-email'}")
+        conn.commit()
     return {"ok": True}
+
+
+def row_value(row, key: str):
+    return row[key] if key in row.keys() else None
