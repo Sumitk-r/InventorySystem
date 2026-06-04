@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException
 
-from ..db import CONDITIONS, audit, get_status_by_kind, rows_to_dicts
+from ..db import CONDITIONS, audit, get_status_by_kind, resolve_user_person_id, rows_to_dicts
 from ..deps import AdminUser, Db, User
 from ..emailer import send_assignment_email, send_return_email
 from ..schemas import AssignmentPayload, ReturnPayload
@@ -27,20 +27,32 @@ LEFT JOIN departments ON departments.id = people.department_id
 
 @router.get("")
 def list_assignments(conn: Db, user: User):
+    params: tuple = ()
+    person_filter = ""
+    if user["role"] != "admin":
+        person_id = resolve_user_person_id(conn, user)
+        if not person_id:
+            return {"active": [], "history": []}
+        person_filter = "AND aa.person_id = ?"
+        params = (person_id,)
     active = conn.execute(
         f"""
         {ASSIGNMENT_SELECT}
         WHERE aa.status = 'active'
+          {person_filter}
         ORDER BY COALESCE(aa.expected_return_on, '9999-12-31'), aa.assigned_on DESC
-        """
+        """,
+        params,
     ).fetchall()
     history = conn.execute(
         f"""
         {ASSIGNMENT_SELECT}
         WHERE aa.status != 'active'
+          {person_filter}
         ORDER BY aa.returned_on DESC, aa.created_at DESC
         LIMIT 100
-        """
+        """,
+        params,
     ).fetchall()
     return {"active": rows_to_dicts(active), "history": rows_to_dicts(history)}
 

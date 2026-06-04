@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import csv
 import io
+import re
+from datetime import date
 from typing import Any, Optional
 
 from fastapi import APIRouter, HTTPException, Response
@@ -9,9 +11,8 @@ from fastapi import APIRouter, HTTPException, Response
 from ..db import (
     CONDITIONS,
     audit,
-    find_status,
-    get_or_create_category,
-    get_or_create_location,
+    get_status_by_kind,
+    resolve_user_person_id,
     row_to_dict,
     rows_to_dicts,
 )
@@ -29,6 +30,7 @@ SELECT assets.*,
        asset_statuses.kind AS status_kind,
        locations.name AS location_name,
        people.full_name AS assigned_to,
+       asset_assignments.person_id AS assigned_person_id,
        asset_assignments.expected_return_on
 FROM assets
 LEFT JOIN asset_categories ON asset_categories.id = assets.category_id
@@ -42,7 +44,20 @@ LEFT JOIN people ON people.id = asset_assignments.person_id
 
 @router.get("")
 def list_assets(conn: Db, user: User):
-    rows = conn.execute(f"{ASSET_SELECT} ORDER BY assets.asset_tag").fetchall()
+    if user["role"] == "admin":
+        rows = conn.execute(f"{ASSET_SELECT} ORDER BY assets.asset_tag").fetchall()
+    else:
+        person_id = resolve_user_person_id(conn, user)
+        if not person_id:
+            return []
+        rows = conn.execute(
+            f"""
+            {ASSET_SELECT}
+            WHERE asset_assignments.person_id = ?
+            ORDER BY assets.asset_tag
+            """,
+            (person_id,),
+        ).fetchall()
     return rows_to_dicts(rows)
 
 
@@ -64,6 +79,11 @@ def create_asset(payload: AssetPayload, conn: Db, user: AdminUser):
     status = get_status(conn, payload.status_id)
     validate_condition(payload.condition)
     location_name = get_location_name(conn, payload.location_id)
+    try:
+        purchase_date = validate_iso_date(payload.purchase_date, "Purchase Date")
+        warranty_end = validate_iso_date(payload.warranty_end, "Warranty End")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     cur = conn.execute(
         """
         INSERT INTO assets(asset_tag, name, category_id, status_id, location_id,
@@ -78,8 +98,8 @@ def create_asset(payload: AssetPayload, conn: Db, user: AdminUser):
             payload.status_id,
             payload.location_id,
             payload.serial_number or None,
-            payload.purchase_date or None,
-            payload.warranty_end or None,
+            purchase_date,
+            warranty_end,
             payload.condition,
             status["kind"],
             location_name,
@@ -95,6 +115,11 @@ def create_asset(payload: AssetPayload, conn: Db, user: AdminUser):
 def update_asset(asset_id: int, payload: AssetPayload, conn: Db, user: AdminUser):
     status = get_status(conn, payload.status_id)
     validate_condition(payload.condition)
+    try:
+        purchase_date = validate_iso_date(payload.purchase_date, "Purchase Date")
+        warranty_end = validate_iso_date(payload.warranty_end, "Warranty End")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     active_assignment = conn.execute(
         "SELECT id FROM asset_assignments WHERE asset_id = ? AND status = 'active'",
         (asset_id,),
@@ -117,8 +142,8 @@ def update_asset(asset_id: int, payload: AssetPayload, conn: Db, user: AdminUser
             payload.status_id,
             payload.location_id,
             payload.serial_number or None,
-            payload.purchase_date or None,
-            payload.warranty_end or None,
+            purchase_date,
+            warranty_end,
             payload.condition,
             status["kind"],
             location_name,
@@ -152,12 +177,14 @@ def bulk_upload_assets(payload: BulkAssetUploadPayload, conn: Db, user: AdminUse
             name = normalized.get("name", "")
             if not asset_tag or not name:
                 raise ValueError("asset_tag and name are required")
-            status = find_status(conn, normalized.get("status"))
-            category_id = get_or_create_category(conn, normalized.get("category"))
-            location_id = get_or_create_location(conn, normalized.get("location"))
+            status = find_active_status(conn, normalized.get("status"))
+            category_id = find_active_master_id(conn, "asset_categories", normalized.get("category"), "Category")
+            location_id = find_active_master_id(conn, "locations", normalized.get("location"), "Location")
             location_name = get_location_name(conn, location_id)
             condition = normalized.get("condition") or "Good"
             validate_condition(condition)
+            purchase_date = normalize_csv_date(normalized.get("purchase_date"), "purchase_date")
+            warranty_end = normalize_csv_date(normalized.get("warranty_end"), "warranty_end")
             existing = conn.execute("SELECT id FROM assets WHERE asset_tag = ?", (asset_tag,)).fetchone()
             values = (
                 name,
@@ -165,8 +192,8 @@ def bulk_upload_assets(payload: BulkAssetUploadPayload, conn: Db, user: AdminUse
                 status["id"],
                 location_id,
                 normalized.get("serial_number") or None,
-                normalized.get("purchase_date") or None,
-                normalized.get("warranty_end") or None,
+                purchase_date,
+                warranty_end,
                 condition,
                 status["kind"],
                 location_name,
@@ -232,3 +259,87 @@ def get_location_name(conn, location_id: Optional[int]) -> Optional[str]:
 def validate_condition(condition: str) -> None:
     if condition not in CONDITIONS:
         raise HTTPException(status_code=400, detail=f"Condition must be one of: {', '.join(CONDITIONS)}")
+
+
+def validate_iso_date(value: Optional[str], label: str) -> Optional[str]:
+    clean = (value or "").strip()
+    if not clean:
+        return None
+    try:
+        parsed = date.fromisoformat(clean)
+    except ValueError as exc:
+        raise ValueError(f"{label} must use YYYY-MM-DD, for example 2026-06-04") from exc
+    if parsed.isoformat() != clean:
+        raise ValueError(f"{label} must use YYYY-MM-DD, for example 2026-06-04")
+    return clean
+
+
+def normalize_csv_date(value: Optional[str], label: str) -> Optional[str]:
+    clean = (value or "").strip()
+    if not clean:
+        return None
+    if re.fullmatch(r"\d{4}-\d{2}-\d{2}", clean):
+        return validate_iso_date(clean, label)
+
+    match = re.fullmatch(r"(\d{1,2})([/-])(\d{1,2})\2(\d{2}|\d{4})", clean)
+    if not match:
+        raise ValueError(f"{label} must use YYYY-MM-DD, or an unambiguous Excel date like 14-06-2026")
+
+    first = int(match.group(1))
+    separator = match.group(2)
+    second = int(match.group(3))
+    year = int(match.group(4))
+    if year < 100:
+        year += 2000
+
+    if separator == "-":
+        day, month = first, second
+    elif second > 12:
+        month, day = first, second
+    elif first > 12:
+        day, month = first, second
+    else:
+        raise ValueError(f"{label} is ambiguous. Use YYYY-MM-DD, for example 2026-06-04")
+
+    try:
+        return date(year, month, day).isoformat()
+    except ValueError as exc:
+        raise ValueError(f"{label} must be a real calendar date") from exc
+
+
+def find_active_status(conn: Db, name: str | None):
+    clean = (name or "").strip()
+    if not clean:
+        return get_status_by_kind(conn, "available")
+    row = conn.execute(
+        """
+        SELECT *
+        FROM asset_statuses
+        WHERE LOWER(name) = LOWER(?)
+          AND active = 1
+        """,
+        (clean,),
+    ).fetchone()
+    if not row:
+        raise ValueError(f"Status '{clean}' does not exist or is inactive. Add/activate it in Master Tables first.")
+    return row
+
+
+def find_active_master_id(conn: Db, table: str, name: str | None, label: str) -> Optional[int]:
+    clean = (name or "").strip()
+    if not clean:
+        return None
+    if table not in {"asset_categories", "locations"}:
+        raise ValueError("Invalid master table")
+    row = conn.execute(
+        f"""
+        SELECT id
+        FROM {table}
+        WHERE LOWER(name) = LOWER(?)
+          AND active = 1
+        """,
+        (clean,),
+    ).fetchone()
+    if not row:
+        raise ValueError(f"{label} '{clean}' does not exist or is inactive. Add/activate it in Master Tables first.")
+    return row["id"]

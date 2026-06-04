@@ -123,9 +123,12 @@ def list_users(conn: Db, user: AdminUser):
     rows = conn.execute(
         """
         SELECT users.id, users.username, users.full_name, users.role, users.department_id,
-               users.active, users.created_at, departments.name AS department_name
+               users.person_id, users.active, users.created_at,
+               departments.name AS department_name,
+               people.full_name AS person_name
         FROM users
         LEFT JOIN departments ON departments.id = users.department_id
+        LEFT JOIN people ON people.id = users.person_id
         ORDER BY users.active DESC, users.role, users.full_name
         """
     ).fetchall()
@@ -136,10 +139,11 @@ def list_users(conn: Db, user: AdminUser):
 def create_user(payload: UserPayload, conn: Db, user: AdminUser):
     if not payload.password:
         raise HTTPException(status_code=400, detail="Password is required for new users")
+    validate_person_id(conn, payload.person_id)
     cur = conn.execute(
         """
-        INSERT INTO users(username, password_hash, full_name, role, department_id)
-        VALUES (?, ?, ?, ?, ?)
+        INSERT INTO users(username, password_hash, full_name, role, department_id, person_id)
+        VALUES (?, ?, ?, ?, ?, ?)
         """,
         (
             payload.username.strip(),
@@ -147,6 +151,7 @@ def create_user(payload: UserPayload, conn: Db, user: AdminUser):
             payload.full_name.strip(),
             payload.role,
             payload.department_id,
+            payload.person_id,
         ),
     )
     audit(conn, user["id"], "create", "user", cur.lastrowid, payload.username)
@@ -156,6 +161,7 @@ def create_user(payload: UserPayload, conn: Db, user: AdminUser):
 
 @router.put("/users/{target_user_id}")
 def update_user(target_user_id: int, payload: UserPayload, conn: Db, user: AdminUser):
+    validate_person_id(conn, payload.person_id)
     if payload.password:
         params = (
             payload.username.strip(),
@@ -163,12 +169,13 @@ def update_user(target_user_id: int, payload: UserPayload, conn: Db, user: Admin
             payload.full_name.strip(),
             payload.role,
             payload.department_id,
+            payload.person_id,
             target_user_id,
         )
         sql = """
             UPDATE users
             SET username = ?, password_hash = ?, full_name = ?, role = ?,
-                department_id = ?, updated_at = CURRENT_TIMESTAMP
+                department_id = ?, person_id = ?, updated_at = CURRENT_TIMESTAMP
             WHERE id = ?
         """
     else:
@@ -177,12 +184,13 @@ def update_user(target_user_id: int, payload: UserPayload, conn: Db, user: Admin
             payload.full_name.strip(),
             payload.role,
             payload.department_id,
+            payload.person_id,
             target_user_id,
         )
         sql = """
             UPDATE users
             SET username = ?, full_name = ?, role = ?,
-                department_id = ?, updated_at = CURRENT_TIMESTAMP
+                department_id = ?, person_id = ?, updated_at = CURRENT_TIMESTAMP
             WHERE id = ?
         """
     cur = conn.execute(sql, params)
@@ -214,3 +222,11 @@ def toggle_active(conn, user, table: str, entity_type: str, entity_id: int, comm
     if commit:
         conn.commit()
     return {"id": entity_id, "active": new_active}
+
+
+def validate_person_id(conn: Db, person_id: int | None) -> None:
+    if not person_id:
+        return
+    row = conn.execute("SELECT id FROM people WHERE id = ? AND active = 1", (person_id,)).fetchone()
+    if not row:
+        raise HTTPException(status_code=400, detail="Linked person must be an active person record")

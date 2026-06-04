@@ -93,9 +93,17 @@ Rules:
 
 - `asset_tag` and `name` are required.
 - Existing assets are updated by `asset_tag`.
-- New categories and locations are created automatically.
-- Status must already exist in `Master Tables > Statuses`.
+- Category, status, and location must already exist and be active in `Master Tables`.
 - Blank status defaults to the active `available` status.
+- `purchase_date` and `warranty_end` should use `YYYY-MM-DD`, for example `2026-06-04`.
+- The upload also normalizes unambiguous Excel dates such as `14-06-2026` or `1/15/26`.
+
+## Staff Visibility
+
+Admins see all inventory data. Staff users see only assets and assignments linked to their own person record.
+
+When creating or editing a staff login in `Users`, set `Linked Person` to the matching record from `People`.
+If it is not set, the app tries to match by username-to-person-email or by full name.
 
 ## Database
 

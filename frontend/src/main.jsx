@@ -17,7 +17,7 @@ const emptyAsset = {
   condition: "Good",
   notes: "",
 };
-const emptyUser = { username: "", full_name: "", password: "", role: "staff", department_id: "" };
+const emptyUser = { username: "", full_name: "", password: "", role: "staff", department_id: "", person_id: "" };
 const statusKinds = ["available", "assigned", "maintenance", "retired"];
 const conditions = ["New", "Good", "Fair", "Damaged", "Lost"];
 
@@ -524,7 +524,7 @@ function Assets({ data, user, mutate }) {
           <div className="panel-header"><h2>Bulk Upload</h2></div>
           <div className="upload-line">
             <input type="file" accept=".csv,text/csv" onChange={uploadCsv} />
-            <span>CSV can create new categories and locations. Status must already exist in Master Tables.</span>
+            <span>Category, status, and location must already exist in Master Tables. Use YYYY-MM-DD for CSV dates.</span>
           </div>
           {uploadResult && <UploadResult result={uploadResult} />}
         </section>
@@ -688,7 +688,14 @@ function Users({ data, mutate }) {
   const [form, setForm] = useState(emptyUser);
   function startEdit(row) {
     setEditing(row);
-    setForm({ username: row.username, full_name: row.full_name, password: "", role: row.role, department_id: row.department_id || "" });
+    setForm({
+      username: row.username,
+      full_name: row.full_name,
+      password: "",
+      role: row.role,
+      department_id: row.department_id || "",
+      person_id: row.person_id || "",
+    });
   }
   function reset() {
     setEditing(null);
@@ -696,7 +703,12 @@ function Users({ data, mutate }) {
   }
   async function submit(event) {
     event.preventDefault();
-    const payload = { ...form, department_id: numberOrNull(form.department_id), password: form.password || null };
+    const payload = {
+      ...form,
+      department_id: numberOrNull(form.department_id),
+      person_id: numberOrNull(form.person_id),
+      password: form.password || null,
+    };
     const path = editing ? `/users/${editing.id}` : "/users";
     const method = editing ? "PUT" : "POST";
     await mutate(() => api(path, { method, body: JSON.stringify(payload) }), "User saved.");
@@ -713,15 +725,17 @@ function Users({ data, mutate }) {
           <label><span>{editing ? "New Password" : "Temporary Password"}</span><input type="password" value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} required={!editing} /></label>
           <label><span>Role</span><select value={form.role} onChange={(event) => setForm({ ...form, role: event.target.value })}><option value="admin">Admin</option><option value="staff">Staff</option></select></label>
           <Select label="Department" value={form.department_id} onChange={(department_id) => setForm({ ...form, department_id })} rows={data.departments || []} />
+          <Select label="Linked Person" value={form.person_id} onChange={(person_id) => setForm({ ...form, person_id })} rows={(data.people || []).filter((row) => row.active || row.id === form.person_id)} labelKey={(row) => row.full_name} />
           <FormActions onClear={reset} />
         </form>
       </section>
       <section className="panel">
-        <DataTable columns={["Name", "Username", "Role", "Department", "Status", "Actions"]} rows={data.users || []} render={(row) => [
+        <DataTable columns={["Name", "Username", "Role", "Department", "Person", "Status", "Actions"]} rows={data.users || []} render={(row) => [
           row.full_name,
           row.username,
           title(row.role),
           row.department_name || "Unassigned",
+          row.person_name || "Not linked",
           <Badge tone={row.active ? "good" : "neutral"}>{row.active ? "Active" : "Inactive"}</Badge>,
           <RowActions row={row} onEdit={startEdit} endpoint="/users" mutate={mutate} />,
         ]} />

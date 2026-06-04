@@ -54,6 +54,7 @@ CREATE TABLE IF NOT EXISTS users (
     full_name TEXT NOT NULL,
     role TEXT NOT NULL CHECK (role IN ('admin', 'staff')) DEFAULT 'staff',
     department_id INTEGER REFERENCES departments(id) ON DELETE SET NULL,
+    person_id INTEGER REFERENCES people(id) ON DELETE SET NULL,
     active INTEGER NOT NULL DEFAULT 1,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -165,6 +166,7 @@ CREATE TABLE IF NOT EXISTS users (
     full_name TEXT NOT NULL,
     role TEXT NOT NULL CHECK (role IN ('admin', 'staff')) DEFAULT 'staff',
     department_id INTEGER REFERENCES departments(id) ON DELETE SET NULL,
+    person_id INTEGER REFERENCES people(id) ON DELETE SET NULL,
     active INTEGER NOT NULL DEFAULT 1,
     created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP::text),
     updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP::text)
@@ -470,12 +472,17 @@ def migrate_existing_assets(conn: sqlite3.Connection) -> None:
     )
 
 
+def migrate_existing_users(conn: sqlite3.Connection) -> None:
+    add_column_if_missing(conn, "users", "person_id", "INTEGER REFERENCES people(id) ON DELETE SET NULL")
+
+
 def init_db() -> None:
     if not DATABASE_URL:
         DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     with connect() as conn:
         conn.executescript(PG_SCHEMA if getattr(conn, "is_postgres", False) else SCHEMA)
         seed_master_data(conn)
+        migrate_existing_users(conn)
         migrate_existing_assets(conn)
         conn.commit()
 
@@ -546,3 +553,46 @@ def find_status(conn: sqlite3.Connection, name: str | None) -> sqlite3.Row:
     if not row:
         raise ValueError(f"Status '{clean}' does not exist. Add it in Master Tables first.")
     return row
+
+
+def resolve_user_person_id(conn: sqlite3.Connection, user: dict[str, Any]) -> int | None:
+    person_id = user.get("person_id")
+    if person_id:
+        row = conn.execute("SELECT id FROM people WHERE id = ? AND active = 1", (person_id,)).fetchone()
+        if row:
+            return row["id"]
+
+    username = (user.get("username") or "").strip()
+    if username:
+        row = conn.execute(
+            """
+            SELECT id
+            FROM people
+            WHERE active = 1
+              AND email IS NOT NULL
+              AND LOWER(email) = LOWER(?)
+            ORDER BY id
+            LIMIT 1
+            """,
+            (username,),
+        ).fetchone()
+        if row:
+            return row["id"]
+
+    full_name = (user.get("full_name") or "").strip()
+    if full_name:
+        row = conn.execute(
+            """
+            SELECT id
+            FROM people
+            WHERE active = 1
+              AND LOWER(full_name) = LOWER(?)
+            ORDER BY id
+            LIMIT 1
+            """,
+            (full_name,),
+        ).fetchone()
+        if row:
+            return row["id"]
+
+    return None

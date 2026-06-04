@@ -18,6 +18,7 @@ def public_user(row: dict) -> dict:
         "full_name": row["full_name"],
         "role": row["role"],
         "department_id": row["department_id"],
+        "person_id": row.get("person_id"),
     }
 
 

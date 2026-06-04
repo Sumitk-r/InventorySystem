@@ -41,6 +41,7 @@ class UserPayload(BaseModel):
     password: Optional[str] = None
     role: str = Field(pattern="^(admin|staff)$")
     department_id: Optional[int] = None
+    person_id: Optional[int] = None
 
 
 class AssetPayload(BaseModel):

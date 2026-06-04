@@ -30,7 +30,7 @@ The design intentionally avoids complex procurement, finance, approval, or multi
 ### Staff
 
 - Sign in with username and password.
-- View dashboards, assets, people, assignments, and reports.
+- View dashboards, assets, assignments, and reports for their own linked person record.
 - Download CSV exports.
 - Cannot create or edit records.
 
@@ -71,8 +71,8 @@ The design intentionally avoids complex procurement, finance, approval, or multi
 - Admins can download an asset upload CSV template from the Assets page.
 - Admins can upload a CSV file to create or update assets in bulk.
 - Bulk upload updates existing assets by asset tag.
-- Missing categories and locations are created automatically.
-- Status values must already exist in the status master table.
+- Category, status, and location values must already exist and be active in the master tables.
+- Purchase and warranty dates in the CSV should use YYYY-MM-DD; unambiguous Excel date formats are normalized during upload.
 
 ### Assignments And Returns
 
@@ -146,6 +146,7 @@ Stores login accounts. This is separate from people because not every employee o
 | full_name | TEXT | Required |
 | role | TEXT | admin or staff |
 | department_id | INTEGER FK | Optional link to departments |
+| person_id | INTEGER FK | Optional link to people for staff asset visibility |
 | active | INTEGER | 1 active, 0 inactive |
 | created_at | TEXT | Timestamp |
 | updated_at | TEXT | Timestamp |
