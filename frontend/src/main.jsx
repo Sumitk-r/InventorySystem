@@ -20,6 +20,18 @@ const emptyAsset = {
 const emptyUser = { username: "", full_name: "", password: "", role: "staff", department_id: "", person_id: "" };
 const statusKinds = ["available", "assigned", "maintenance", "retired"];
 const conditions = ["New", "Good", "Fair", "Damaged", "Lost"];
+const navIcons = {
+  dashboard: "dash",
+  departments: "dept",
+  people: "people",
+  assets: "asset",
+  assignments: "assign",
+  reports: "report",
+  categories: "cat",
+  statuses: "status",
+  locations: "loc",
+  users: "user",
+};
 
 function App() {
   const [token, updateToken] = useState(getToken());
@@ -69,6 +81,18 @@ function App() {
     loadAll();
   }, [token]);
 
+  useEffect(() => {
+    if (!message) return;
+    const timer = window.setTimeout(() => setMessage(""), 2600);
+    return () => window.clearTimeout(timer);
+  }, [message]);
+
+  useEffect(() => {
+    if (!error) return;
+    const timer = window.setTimeout(() => setError(""), 5200);
+    return () => window.clearTimeout(timer);
+  }, [error]);
+
   function handleLogout() {
     setToken(null);
     updateToken(null);
@@ -90,7 +114,7 @@ function App() {
       setToken(result.token);
       updateToken(result.token);
       setUser(result.user);
-      setMessage("Signed in.");
+      setMessage("");
     } catch (err) {
       setError(err.message);
     }
@@ -116,16 +140,22 @@ function App() {
       <Sidebar page={page} setPage={setPage} user={user} />
       <main className="main">
         <header className="topbar">
-          <div>
-            <span>Signed in as</span>
-            <strong>{user.full_name}</strong>
+          <div className="topbar-title">
+            <span>Inventory / {title(page)}</span>
+            <strong>Inventory workspace</strong>
           </div>
-          <button className="button ghost" onClick={handleLogout}>Sign Out</button>
+          <div className="account-pill">
+            <span className="account-avatar">{initials(user.full_name)}</span>
+            <div>
+              <strong>{user.full_name}</strong>
+              <span>{title(user.role)}</span>
+            </div>
+            {loading && <span className="sync-pill">Syncing</span>}
+            <button className="button ghost small" onClick={handleLogout}>Sign Out</button>
+          </div>
         </header>
-        {message && <div className="flash success">{message}</div>}
-        {error && <div className="flash error">{error}</div>}
-        {loading && <div className="flash">Loading latest data...</div>}
         <Page page={page} data={data} user={user} mutate={mutate} setPage={setPage} />
+        {(message || error) && <Toast tone={error ? "error" : "success"} message={error || message} onClose={() => error ? setError("") : setMessage("")} />}
       </main>
     </div>
   );
@@ -177,17 +207,17 @@ function Sidebar({ page, setPage, user }) {
         </div>
       </div>
       <nav>
-        {nav.map(([key, label]) => <NavButton key={key} active={page === key} onClick={() => setPage(key)}>{label}</NavButton>)}
+        {nav.map(([key, label]) => <NavButton key={key} icon={navIcons[key]} active={page === key} onClick={() => setPage(key)}>{label}</NavButton>)}
         <div className="nav-section">Master Tables</div>
-        {masters.map(([key, label]) => <NavButton key={key} active={page === key} onClick={() => setPage(key)}>{label}</NavButton>)}
-        {user.role === "admin" && <NavButton active={page === "users"} onClick={() => setPage("users")}>Users</NavButton>}
+        {masters.map(([key, label]) => <NavButton key={key} icon={navIcons[key]} active={page === key} onClick={() => setPage(key)}>{label}</NavButton>)}
+        {user.role === "admin" && <NavButton icon={navIcons.users} active={page === "users"} onClick={() => setPage("users")}>Users</NavButton>}
       </nav>
     </aside>
   );
 }
 
-function NavButton({ active, children, onClick }) {
-  return <button className={`nav-link ${active ? "active" : ""}`} onClick={onClick}>{children}</button>;
+function NavButton({ active, children, icon, onClick }) {
+  return <button className={`nav-link ${active ? "active" : ""}`} onClick={onClick}><span className="nav-icon" data-icon={icon}></span>{children}</button>;
 }
 
 function Page({ page, data, user, mutate, setPage }) {
@@ -220,16 +250,28 @@ function Heading({ title, subtitle, action }) {
 function Dashboard({ data, setPage }) {
   const stats = data.dashboard?.stats || {};
   const overdue = data.dashboard?.overdue || [];
+  const assets = data.assets || [];
   return (
     <>
       <Heading title="Dashboard" subtitle="Inventory status across departments." />
-      <section className="stats-grid">
-        <Stat label="Total Assets" value={stats.total_assets || 0} />
-        <Stat label="Available" value={stats.available_assets || 0} />
-        <Stat label="Checked Out" value={stats.active_assignments || 0} />
-        <Stat label="Overdue" value={stats.overdue || 0} urgent />
-        <Stat label="Due Soon" value={stats.due_soon || 0} />
+      <section className="dashboard-hero">
+        <div>
+          <span className="eyebrow">Asset command center</span>
+          <h2>{stats.active_assignments || 0} checked out, {stats.available_assets || 0} ready to assign</h2>
+        </div>
+        <div className="hero-metrics">
+          <button type="button" onClick={() => setPage("reports")}><strong>{stats.overdue || 0}</strong> overdue</button>
+          <button type="button" onClick={() => setPage("reports")}><strong>{stats.due_soon || 0}</strong> due soon</button>
+        </div>
       </section>
+      <section className="stats-grid">
+        <Stat label="Total Assets" value={stats.total_assets || 0} onClick={() => setPage("assets")} />
+        <Stat label="Available" value={stats.available_assets || 0} onClick={() => setPage("assets")} />
+        <Stat label="Checked Out" value={stats.active_assignments || 0} onClick={() => setPage("assignments")} />
+        <Stat label="Overdue" value={stats.overdue || 0} urgent onClick={() => setPage("reports")} />
+        <Stat label="Due Soon" value={stats.due_soon || 0} onClick={() => setPage("reports")} />
+      </section>
+      <DashboardCharts assets={assets} />
       <section className="panel">
         <div className="panel-header">
           <h2>Overdue Assets</h2>
@@ -245,8 +287,67 @@ function Dashboard({ data, setPage }) {
   );
 }
 
-function Stat({ label, value, urgent }) {
-  return <div className={`stat ${urgent ? "urgent" : ""}`}><span>{label}</span><strong>{value}</strong></div>;
+function DashboardCharts({ assets }) {
+  const statusCounts = countBy(assets, (row) => row.status_name || title(row.status || "Unknown"));
+  const categoryCounts = countBy(assets, (row) => row.category_name || "Unassigned");
+  const statusEntries = Object.entries(statusCounts);
+  const categoryEntries = Object.entries(categoryCounts).sort((a, b) => b[1] - a[1]).slice(0, 5);
+  return (
+    <section className="chart-grid">
+      <div className="panel chart-panel">
+        <div className="panel-header"><h2>Status Mix</h2></div>
+        <div className="donut-wrap">
+          <div className="donut" style={{ background: donutGradient(statusEntries) }}>
+            <span>{assets.length}</span>
+            <small>assets</small>
+          </div>
+          <div className="legend-list">
+            {statusEntries.length === 0 && <EmptyState compact title="No asset status yet" />}
+            {statusEntries.map(([label, value], index) => (
+              <div className="legend-row" key={label}>
+                <span className="legend-dot" style={{ background: statusChartColor(label, index) }}></span>
+                <strong>{label}</strong>
+                <em>{value}</em>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+      <div className="panel chart-panel">
+        <div className="panel-header"><h2>Top Categories</h2></div>
+        <div className="bar-list">
+          {categoryEntries.length === 0 && <EmptyState compact title="No categories yet" />}
+          {categoryEntries.map(([label, value], index) => (
+            <div className="bar-row" key={label}>
+              <div>
+                <span>{label}</span>
+                <strong>{value}</strong>
+              </div>
+              <progress max={Math.max(...categoryEntries.map(([, count]) => count), 1)} value={value} style={{ "--bar-color": chartColor(index) }}></progress>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function Stat({ label, value, urgent, onClick }) {
+  return (
+    <button className={`stat ${urgent ? "urgent" : ""}`} onClick={onClick} type="button">
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </button>
+  );
+}
+
+function Toast({ tone, message, onClose }) {
+  return (
+    <div className={`toast ${tone}`}>
+      <span>{message}</span>
+      <button type="button" onClick={onClose} aria-label="Dismiss notification">x</button>
+    </div>
+  );
 }
 
 function MasterSimple({ title, rows, endpoint, placeholder, user, mutate }) {
@@ -464,8 +565,29 @@ function Assets({ data, user, mutate }) {
   const [editing, setEditing] = useState(null);
   const defaultStatus = useMemo(() => (data.statuses || []).find((row) => row.kind === "available" && row.active) || (data.statuses || [])[0], [data.statuses]);
   const [form, setForm] = useState(emptyAsset);
+  const [filters, setFilters] = useState({ search: "", status: "", category: "", location: "" });
+  const [assetModalOpen, setAssetModalOpen] = useState(false);
   const [uploadResult, setUploadResult] = useState(null);
   const isAdmin = user.role === "admin";
+  const filteredAssets = useMemo(() => {
+    const search = filters.search.trim().toLowerCase();
+    return (data.assets || []).filter((asset) => {
+      const text = [
+        asset.asset_tag,
+        asset.name,
+        asset.serial_number,
+        asset.category_name,
+        asset.location_name,
+        asset.status_name,
+        asset.condition,
+        asset.assigned_to,
+      ].join(" ").toLowerCase();
+      return (!search || text.includes(search))
+        && (!filters.status || String(asset.status_id || "") === String(filters.status))
+        && (!filters.category || String(asset.category_id || "") === String(filters.category))
+        && (!filters.location || String(asset.location_id || "") === String(filters.location));
+    });
+  }, [data.assets, filters]);
   useEffect(() => {
     if (!editing && defaultStatus && !form.status_id) {
       setForm((current) => ({ ...current, status_id: defaultStatus.id }));
@@ -485,10 +607,12 @@ function Assets({ data, user, mutate }) {
       condition: row.condition || "Good",
       notes: row.notes || "",
     });
+    setAssetModalOpen(true);
   }
   function reset() {
     setEditing(null);
     setForm({ ...emptyAsset, status_id: defaultStatus?.id || "" });
+    setAssetModalOpen(false);
   }
   async function submit(event) {
     event.preventDefault();
@@ -516,9 +640,23 @@ function Assets({ data, user, mutate }) {
   async function downloadTemplate() {
     await downloadWithAuth("/assets/template.csv", "asset-upload-template.csv");
   }
+  function openCreate() {
+    setEditing(null);
+    setForm({ ...emptyAsset, status_id: defaultStatus?.id || "" });
+    setAssetModalOpen(true);
+  }
   return (
     <>
-      <Heading title="Assets" subtitle="Asset register with configurable master data." action={isAdmin && <button className="button" onClick={downloadTemplate}>Download Upload Template</button>} />
+      <Heading
+        title="Assets"
+        subtitle="Asset register with configurable master data."
+        action={isAdmin && (
+          <div className="action-group">
+            <button className="button" onClick={downloadTemplate}><span className="button-icon" data-icon="download"></span>Template</button>
+            <button className="button primary" onClick={openCreate}><span className="button-icon" data-icon="plus"></span>Add Asset</button>
+          </div>
+        )}
+      />
       {isAdmin && (
         <section className="panel">
           <div className="panel-header"><h2>Bulk Upload</h2></div>
@@ -529,9 +667,8 @@ function Assets({ data, user, mutate }) {
           {uploadResult && <UploadResult result={uploadResult} />}
         </section>
       )}
-      {isAdmin && (
-        <section className="panel">
-          <div className="panel-header"><h2>{editing ? "Edit Asset" : "Add Asset"}</h2></div>
+      {isAdmin && assetModalOpen && (
+        <Modal title={editing ? "Edit Asset" : "Add Asset"} onClose={reset}>
           <form className="form-grid" onSubmit={submit}>
             <label><span>Asset Tag</span><input value={form.asset_tag} onChange={(event) => setForm({ ...form, asset_tag: event.target.value })} required /></label>
             <label><span>Name</span><input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} required /></label>
@@ -545,21 +682,40 @@ function Assets({ data, user, mutate }) {
             <label className="span-2"><span>Notes</span><textarea value={form.notes} onChange={(event) => setForm({ ...form, notes: event.target.value })} /></label>
             <FormActions onClear={reset} />
           </form>
-        </section>
+        </Modal>
       )}
       <section className="panel">
-        <DataTable columns={["Asset", "Category", "Status", "Location", "Condition", "Assigned To", "Due", "Actions"]} rows={data.assets || []} render={(row) => [
+        <AssetFilters filters={filters} setFilters={setFilters} data={data} />
+        <DataTable columns={["Asset", "Category", "Status", "Location", "Condition", "Assigned To", "Due", "Actions"]} rows={filteredAssets} emptyTitle="No assets match this view" render={(row) => [
           <strong>{row.asset_tag}<span>{row.name}</span></strong>,
           row.category_name || "",
-          row.status_name || title(row.status),
+          <StatusChip value={row.status_name || title(row.status)} kind={row.status_kind || row.status} />,
           row.location_name || row.location || "",
           row.condition,
           row.assigned_to || "",
           formatDate(row.expected_return_on),
-          isAdmin && <button className="button small" onClick={() => startEdit(row)}>Edit</button>,
+          isAdmin && <button className="icon-button" title="Edit asset" aria-label="Edit asset" onClick={() => startEdit(row)}><span className="button-icon" data-icon="edit"></span></button>,
         ]} />
       </section>
     </>
+  );
+}
+
+function AssetFilters({ filters, setFilters, data }) {
+  function update(key, value) {
+    setFilters((current) => ({ ...current, [key]: value }));
+  }
+  return (
+    <div className="filter-bar">
+      <label className="search-field">
+        <span>Search</span>
+        <input value={filters.search} placeholder="Tag, name, serial, person" onChange={(event) => update("search", event.target.value)} />
+      </label>
+      <Select label="Status" value={filters.status} onChange={(value) => update("status", value)} rows={data.statuses || []} />
+      <Select label="Category" value={filters.category} onChange={(value) => update("category", value)} rows={data.categories || []} />
+      <Select label="Location" value={filters.location} onChange={(value) => update("location", value)} rows={data.locations || []} />
+      <button className="button ghost" type="button" onClick={() => setFilters({ search: "", status: "", category: "", location: "" })}>Clear</button>
+    </div>
   );
 }
 
@@ -744,14 +900,34 @@ function Users({ data, mutate }) {
   );
 }
 
-function DataTable({ columns, rows, render }) {
+function Modal({ title, children, onClose }) {
+  return (
+    <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label={title}>
+      <section className="modal-panel">
+        <div className="modal-header">
+          <h2>{title}</h2>
+          <button className="icon-button" type="button" onClick={onClose} aria-label="Close"><span className="button-icon" data-icon="close"></span></button>
+        </div>
+        {children}
+      </section>
+    </div>
+  );
+}
+
+function DataTable({ columns, rows, render, emptyTitle = "No records yet" }) {
+  if (rows.length === 0) {
+    return <EmptyState title={emptyTitle} />;
+  }
   return (
     <div className="table-wrap">
       <table>
         <thead><tr>{columns.map((column) => <th key={column}>{column}</th>)}</tr></thead>
         <tbody>
-          {rows.length === 0 && <tr><td className="empty" colSpan={columns.length}>No records.</td></tr>}
-          {rows.map((row) => <tr key={row.id || `${row.asset_tag}-${row.name}`}>{render(row).map((cell, index) => <td key={index}>{cell}</td>)}</tr>)}
+          {rows.map((row) => (
+            <tr key={row.id || `${row.asset_tag}-${row.name}`}>
+              {render(row).map((cell, index) => <td data-label={columns[index]} key={index}>{cell}</td>)}
+            </tr>
+          ))}
         </tbody>
       </table>
     </div>
@@ -761,10 +937,19 @@ function DataTable({ columns, rows, render }) {
 function RowActions({ row, onEdit, endpoint, mutate }) {
   return (
     <div className="row-actions">
-      <button className="button small" onClick={() => onEdit(row)}>Edit</button>
-      <button className="button small ghost" onClick={() => mutate(() => api(`${endpoint}/${row.id}/toggle`, { method: "PATCH" }), "Status updated.")}>
-        {row.active ? "Deactivate" : "Activate"}
+      <button className="icon-button" title="Edit" aria-label="Edit" onClick={() => onEdit(row)}><span className="button-icon" data-icon="edit"></span></button>
+      <button className="icon-button" title={row.active ? "Deactivate" : "Activate"} aria-label={row.active ? "Deactivate" : "Activate"} onClick={() => mutate(() => api(`${endpoint}/${row.id}/toggle`, { method: "PATCH" }), "Status updated.")}>
+        <span className="button-icon" data-icon={row.active ? "pause" : "play"}></span>
       </button>
+    </div>
+  );
+}
+
+function EmptyState({ title = "No records yet", compact = false }) {
+  return (
+    <div className={`empty-state ${compact ? "compact" : ""}`}>
+      <span className="empty-icon"></span>
+      <strong>{title}</strong>
     </div>
   );
 }
@@ -871,8 +1056,63 @@ function Badge({ tone = "neutral", children }) {
   return <span className={`badge ${tone}`}>{children}</span>;
 }
 
+function StatusChip({ value, kind }) {
+  return <Badge tone={statusTone(kind || value)}>{value || "Unknown"}</Badge>;
+}
+
 function title(value = "") {
   return String(value).replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function countBy(rows, getKey) {
+  return rows.reduce((counts, row) => {
+    const key = getKey(row) || "Unassigned";
+    counts[key] = (counts[key] || 0) + 1;
+    return counts;
+  }, {});
+}
+
+function chartColor(index) {
+  return ["#1f7a61", "#315f7d", "#f0b35b", "#b86b4b", "#6f7d78", "#8f6ab7"][index % 6];
+}
+
+function statusChartColor(label, index = 0) {
+  const clean = String(label || "").toLowerCase();
+  if (clean.includes("available")) return "#1f8a5b";
+  if (clean.includes("assigned") || clean.includes("checked")) return "#2563eb";
+  if (clean.includes("maintenance")) return "#d28716";
+  if (clean.includes("retired") || clean.includes("lost")) return "#7b8794";
+  return chartColor(index);
+}
+
+function donutGradient(entries) {
+  const total = entries.reduce((sum, [, value]) => sum + value, 0);
+  if (!total) return "conic-gradient(#dce3df 0 360deg)";
+  let cursor = 0;
+  const stops = entries.map(([label, value], index) => {
+    const start = cursor;
+    cursor += (value / total) * 360;
+    return `${statusChartColor(label, index)} ${start}deg ${cursor}deg`;
+  });
+  return `conic-gradient(${stops.join(", ")})`;
+}
+
+function statusTone(value = "") {
+  const clean = String(value).toLowerCase();
+  if (clean.includes("available") || clean.includes("active")) return "good";
+  if (clean.includes("assigned") || clean.includes("checked")) return "info";
+  if (clean.includes("maintenance") || clean.includes("damaged") || clean.includes("due")) return "warning";
+  if (clean.includes("retired") || clean.includes("lost") || clean.includes("overdue")) return "danger";
+  return "neutral";
+}
+
+function initials(value = "") {
+  return String(value)
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() || "")
+    .join("") || "IS";
 }
 
 function formatDate(value) {
