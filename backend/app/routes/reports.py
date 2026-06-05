@@ -147,6 +147,10 @@ def weekly_report_csv(conn: Db, user: User, from_date: Optional[str] = None, to_
             "Returned On",
             "Return Condition",
             "Status",
+            "Category",
+            "Count",
+            "Amount",
+            "Reason",
             "Notes",
         ]
     )
@@ -164,6 +168,10 @@ def weekly_report_csv(conn: Db, user: User, from_date: Optional[str] = None, to_
                     row.get("returned_on") or "",
                     row.get("return_condition") or "",
                     row.get("status_name") or row.get("status", ""),
+                    row.get("category_name") or "",
+                    row.get("asset_count") or row.get("total_assets") or "",
+                    row.get("amount") or row.get("total_value") or "",
+                    row.get("reason") or "",
                     row.get("notes") or "",
                 ]
             )
@@ -315,11 +323,42 @@ def build_weekly_report(conn, start: str, end: str, user: User) -> dict:
         """,
         person_params,
     ).fetchall()
+    inventory_by_category = conn.execute(
+        f"""
+        SELECT COALESCE(asset_categories.name, 'Unassigned') AS category_name,
+               COUNT(assets.id) AS total_assets,
+               SUM(CASE WHEN asset_statuses.kind = 'available' THEN 1 ELSE 0 END) AS available_assets,
+               SUM(CASE WHEN asset_statuses.kind = 'assigned' THEN 1 ELSE 0 END) AS assigned_assets,
+               SUM(CASE WHEN asset_statuses.kind = 'maintenance' THEN 1 ELSE 0 END) AS maintenance_assets,
+               SUM(CASE WHEN asset_statuses.kind = 'retired' THEN 1 ELSE 0 END) AS retired_assets,
+               SUM(COALESCE(assets.purchase_cost, 0)) AS total_value
+        FROM assets
+        LEFT JOIN asset_categories ON asset_categories.id = assets.category_id
+        LEFT JOIN asset_statuses ON asset_statuses.id = assets.status_id
+        WHERE 1 = 1
+          {asset_filter}
+        GROUP BY COALESCE(asset_categories.name, 'Unassigned')
+        ORDER BY total_assets DESC, category_name
+        """,
+        person_params,
+    ).fetchall()
+    non_working_assets = conn.execute(
+        f"""
+        {asset_select}
+        WHERE (asset_statuses.kind = 'maintenance' OR assets.condition IN ('Damaged', 'Lost'))
+          {asset_filter}
+        ORDER BY asset_statuses.kind, assets.asset_tag
+        """,
+        person_params,
+    ).fetchall()
     return {
         "overdue": rows_to_dicts(overdue),
         "due_soon": rows_to_dicts(due_soon),
         "assigned_in_range": rows_to_dicts(assigned),
         "returned_in_range": rows_to_dicts(returned),
+        "inventory_by_category": rows_to_dicts(inventory_by_category),
+        "non_working_assets": add_reason(rows_to_dicts(non_working_assets)),
+        "inventory_value_summary": inventory_value_summary(conn, asset_filter, person_params),
         "available_assets": rows_to_dicts(available_assets),
         "assigned_assets": rows_to_dicts(assigned_assets),
         "maintenance_assets": rows_to_dicts(maintenance_assets),
@@ -333,8 +372,50 @@ def empty_report() -> dict:
         "due_soon": [],
         "assigned_in_range": [],
         "returned_in_range": [],
+        "inventory_by_category": [],
+        "non_working_assets": [],
+        "inventory_value_summary": [],
         "available_assets": [],
         "assigned_assets": [],
         "maintenance_assets": [],
         "returned_assets": [],
     }
+
+
+def inventory_value_summary(conn, asset_filter: str, person_params: tuple) -> list[dict]:
+    rows = []
+    for label, extra_filter in [
+        ("Total Inventory Value", ""),
+        ("Available Asset Value", "AND asset_statuses.kind = 'available'"),
+        ("Assigned Asset Value", "AND asset_statuses.kind = 'assigned'"),
+        ("Maintenance Asset Value", "AND asset_statuses.kind = 'maintenance'"),
+        ("Retired Asset Value", "AND asset_statuses.kind = 'retired'"),
+        ("Assets Missing Value", "AND assets.purchase_cost IS NULL"),
+    ]:
+        row = conn.execute(
+            f"""
+            SELECT COUNT(assets.id) AS asset_count,
+                   SUM(COALESCE(assets.purchase_cost, 0)) AS amount
+            FROM assets
+            LEFT JOIN asset_statuses ON asset_statuses.id = assets.status_id
+            WHERE 1 = 1
+              {asset_filter}
+              {extra_filter}
+            """,
+            person_params,
+        ).fetchone()
+        rows.append({"metric": label, "asset_count": row["asset_count"], "amount": row["amount"] or 0})
+    return rows
+
+
+def add_reason(rows: list[dict]) -> list[dict]:
+    for row in rows:
+        reasons = []
+        if row.get("status_kind") == "maintenance":
+            reasons.append("Under maintenance")
+        if row.get("condition") in {"Damaged", "Lost"}:
+            reasons.append(f"Condition: {row['condition']}")
+        if row.get("notes"):
+            reasons.append(row["notes"])
+        row["reason"] = "; ".join(reasons) or "Not specified"
+    return rows

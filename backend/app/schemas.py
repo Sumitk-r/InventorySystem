@@ -53,6 +53,7 @@ class AssetPayload(BaseModel):
     serial_number: Optional[str] = None
     purchase_date: Optional[str] = None
     warranty_end: Optional[str] = None
+    purchase_cost: Optional[float] = Field(default=None, ge=0)
     condition: str = "Good"
     notes: Optional[str] = None
 

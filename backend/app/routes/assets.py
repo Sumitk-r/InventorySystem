@@ -64,8 +64,8 @@ def list_assets(conn: Db, user: User):
 @router.get("/template.csv")
 def asset_template(user: User):
     content = (
-        "asset_tag,name,category,status,location,serial_number,purchase_date,warranty_end,condition,notes\n"
-        "LAP-001,Dell Latitude 5450,Laptop,Available,IT Closet,SN123,2026-01-15,2029-01-15,Good,Assigned pool laptop\n"
+        "asset_tag,name,category,status,location,serial_number,purchase_date,warranty_end,purchase_cost,condition,notes\n"
+        "LAP-001,Dell Latitude 5450,Laptop,Available,IT Closet,SN123,2026-01-15,2029-01-15,65000,Good,Assigned pool laptop\n"
     )
     return Response(
         content=content,
@@ -87,9 +87,9 @@ def create_asset(payload: AssetPayload, conn: Db, user: AdminUser):
     cur = conn.execute(
         """
         INSERT INTO assets(asset_tag, name, category_id, status_id, location_id,
-                           serial_number, purchase_date, warranty_end, condition,
-                           status, location, notes)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                           serial_number, purchase_date, warranty_end, purchase_cost,
+                           condition, status, location, notes)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             payload.asset_tag.strip(),
@@ -100,6 +100,7 @@ def create_asset(payload: AssetPayload, conn: Db, user: AdminUser):
             payload.serial_number or None,
             purchase_date,
             warranty_end,
+            payload.purchase_cost,
             payload.condition,
             status["kind"],
             location_name,
@@ -131,8 +132,8 @@ def update_asset(asset_id: int, payload: AssetPayload, conn: Db, user: AdminUser
         """
         UPDATE assets
         SET asset_tag = ?, name = ?, category_id = ?, status_id = ?, location_id = ?,
-            serial_number = ?, purchase_date = ?, warranty_end = ?, condition = ?,
-            status = ?, location = ?, notes = ?, updated_at = CURRENT_TIMESTAMP
+            serial_number = ?, purchase_date = ?, warranty_end = ?, purchase_cost = ?,
+            condition = ?, status = ?, location = ?, notes = ?, updated_at = CURRENT_TIMESTAMP
         WHERE id = ?
         """,
         (
@@ -144,6 +145,7 @@ def update_asset(asset_id: int, payload: AssetPayload, conn: Db, user: AdminUser
             payload.serial_number or None,
             purchase_date,
             warranty_end,
+            payload.purchase_cost,
             payload.condition,
             status["kind"],
             location_name,
@@ -185,6 +187,7 @@ def bulk_upload_assets(payload: BulkAssetUploadPayload, conn: Db, user: AdminUse
             validate_condition(condition)
             purchase_date = normalize_csv_date(normalized.get("purchase_date"), "purchase_date")
             warranty_end = normalize_csv_date(normalized.get("warranty_end"), "warranty_end")
+            purchase_cost = normalize_csv_number(normalized.get("purchase_cost") or normalized.get("asset_value"), "purchase_cost")
             existing = conn.execute("SELECT id FROM assets WHERE asset_tag = ?", (asset_tag,)).fetchone()
             values = (
                 name,
@@ -194,6 +197,7 @@ def bulk_upload_assets(payload: BulkAssetUploadPayload, conn: Db, user: AdminUse
                 normalized.get("serial_number") or None,
                 purchase_date,
                 warranty_end,
+                purchase_cost,
                 condition,
                 status["kind"],
                 location_name,
@@ -204,7 +208,7 @@ def bulk_upload_assets(payload: BulkAssetUploadPayload, conn: Db, user: AdminUse
                     """
                     UPDATE assets
                     SET name = ?, category_id = ?, status_id = ?, location_id = ?,
-                        serial_number = ?, purchase_date = ?, warranty_end = ?,
+                        serial_number = ?, purchase_date = ?, warranty_end = ?, purchase_cost = ?,
                         condition = ?, status = ?, location = ?, notes = ?,
                         updated_at = CURRENT_TIMESTAMP
                     WHERE id = ?
@@ -217,9 +221,9 @@ def bulk_upload_assets(payload: BulkAssetUploadPayload, conn: Db, user: AdminUse
                 cur = conn.execute(
                     """
                     INSERT INTO assets(asset_tag, name, category_id, status_id, location_id,
-                                       serial_number, purchase_date, warranty_end, condition,
-                                       status, location, notes)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                       serial_number, purchase_date, warranty_end, purchase_cost,
+                                       condition, status, location, notes)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (asset_tag,) + values,
                 )
@@ -305,6 +309,19 @@ def normalize_csv_date(value: Optional[str], label: str) -> Optional[str]:
         return date(year, month, day).isoformat()
     except ValueError as exc:
         raise ValueError(f"{label} must be a real calendar date") from exc
+
+
+def normalize_csv_number(value: Optional[str], label: str) -> Optional[float]:
+    clean = (value or "").strip().replace(",", "")
+    if not clean:
+        return None
+    try:
+        amount = float(clean)
+    except ValueError as exc:
+        raise ValueError(f"{label} must be a valid number") from exc
+    if amount < 0:
+        raise ValueError(f"{label} cannot be negative")
+    return amount
 
 
 def find_active_status(conn: Db, name: str | None):

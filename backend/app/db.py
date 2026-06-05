@@ -100,6 +100,7 @@ CREATE TABLE IF NOT EXISTS assets (
     serial_number TEXT,
     purchase_date TEXT,
     warranty_end TEXT,
+    purchase_cost REAL,
     condition TEXT NOT NULL DEFAULT 'Good',
     status TEXT NOT NULL CHECK (status IN ('available', 'assigned', 'maintenance', 'retired')) DEFAULT 'available',
     location TEXT,
@@ -212,6 +213,7 @@ CREATE TABLE IF NOT EXISTS assets (
     serial_number TEXT,
     purchase_date TEXT,
     warranty_end TEXT,
+    purchase_cost REAL,
     condition TEXT NOT NULL DEFAULT 'Good',
     status TEXT NOT NULL CHECK (status IN ('available', 'assigned', 'maintenance', 'retired')) DEFAULT 'available',
     location TEXT,
@@ -431,6 +433,7 @@ def seed_master_data(conn: sqlite3.Connection) -> None:
 def migrate_existing_assets(conn: sqlite3.Connection) -> None:
     add_column_if_missing(conn, "assets", "status_id", "INTEGER REFERENCES asset_statuses(id) ON DELETE SET NULL")
     add_column_if_missing(conn, "assets", "location_id", "INTEGER REFERENCES locations(id) ON DELETE SET NULL")
+    add_column_if_missing(conn, "assets", "purchase_cost", "REAL")
 
     legacy_locations = conn.execute(
         """

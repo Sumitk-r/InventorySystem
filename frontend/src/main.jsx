@@ -14,6 +14,7 @@ const emptyAsset = {
   serial_number: "",
   purchase_date: "",
   warranty_end: "",
+  purchase_cost: "",
   condition: "Good",
   notes: "",
 };
@@ -604,6 +605,7 @@ function Assets({ data, user, mutate }) {
       serial_number: row.serial_number || "",
       purchase_date: row.purchase_date || "",
       warranty_end: row.warranty_end || "",
+      purchase_cost: row.purchase_cost ?? "",
       condition: row.condition || "Good",
       notes: row.notes || "",
     });
@@ -621,6 +623,7 @@ function Assets({ data, user, mutate }) {
       category_id: numberOrNull(form.category_id),
       status_id: Number(form.status_id),
       location_id: numberOrNull(form.location_id),
+      purchase_cost: numberOrNull(form.purchase_cost),
     };
     const path = editing ? `/assets/${editing.id}` : "/assets";
     const method = editing ? "PUT" : "POST";
@@ -678,6 +681,7 @@ function Assets({ data, user, mutate }) {
             <label><span>Serial Number</span><input value={form.serial_number} onChange={(event) => setForm({ ...form, serial_number: event.target.value })} /></label>
             <DateInput label="Purchase Date" value={form.purchase_date} onChange={(purchase_date) => setForm({ ...form, purchase_date })} />
             <DateInput label="Warranty End" value={form.warranty_end} onChange={(warranty_end) => setForm({ ...form, warranty_end })} />
+            <label><span>Asset Value</span><input type="number" min="0" step="0.01" value={form.purchase_cost} onChange={(event) => setForm({ ...form, purchase_cost: event.target.value })} /></label>
             <label><span>Condition</span><select value={form.condition} onChange={(event) => setForm({ ...form, condition: event.target.value })}>{conditions.map((condition) => <option key={condition}>{condition}</option>)}</select></label>
             <label className="span-2"><span>Notes</span><textarea value={form.notes} onChange={(event) => setForm({ ...form, notes: event.target.value })} /></label>
             <FormActions onClear={reset} />
@@ -735,12 +739,25 @@ function UploadResult({ result }) {
 
 function Assignments({ data, user, mutate }) {
   const [form, setForm] = useState({ asset_id: "", person_id: "", assigned_on: today(), expected_return_on: "", notes: "" });
+  const [filters, setFilters] = useState({ category_id: "", department_id: "" });
   const isAdmin = user.role === "admin";
-  const assignableAssets = (data.assets || []).filter((asset) => asset.status_kind === "available");
+  const assignableAssets = useMemo(() => {
+    return (data.assets || []).filter((asset) => {
+      return asset.status_kind === "available"
+        && (!filters.category_id || String(asset.category_id || "") === String(filters.category_id));
+    });
+  }, [data.assets, filters.category_id]);
+  const assignablePeople = useMemo(() => {
+    return (data.people || []).filter((person) => {
+      return person.active
+        && (!filters.department_id || String(person.department_id || "") === String(filters.department_id));
+    });
+  }, [data.people, filters.department_id]);
   async function submit(event) {
     event.preventDefault();
     await mutate(() => api("/assignments", { method: "POST", body: JSON.stringify({ ...form, asset_id: Number(form.asset_id), person_id: Number(form.person_id) }) }), "Asset assigned.");
     setForm({ asset_id: "", person_id: "", assigned_on: today(), expected_return_on: "", notes: "" });
+    setFilters({ category_id: "", department_id: "" });
   }
   async function markReturn(row, condition) {
     await mutate(() => api(`/assignments/${row.id}/return`, { method: "POST", body: JSON.stringify({ returned_on: today(), return_condition: condition, notes: row.notes || "" }) }), "Return recorded.");
@@ -752,8 +769,26 @@ function Assignments({ data, user, mutate }) {
         <section className="panel">
           <div className="panel-header"><h2>Assign Asset</h2></div>
           <form className="form-grid" onSubmit={submit}>
-            <Select label="Available Asset" value={form.asset_id} onChange={(asset_id) => setForm({ ...form, asset_id })} rows={assignableAssets} labelKey={(row) => `${row.asset_tag} - ${row.name}`} required />
-            <Select label="Assign To" value={form.person_id} onChange={(person_id) => setForm({ ...form, person_id })} rows={(data.people || []).filter((row) => row.active)} labelKey={(row) => row.full_name} required />
+            <Select label="Filter by Category" value={filters.category_id} onChange={(category_id) => { setFilters({ ...filters, category_id }); setForm({ ...form, asset_id: "" }); }} rows={(data.categories || []).filter((row) => row.active)} />
+            <Select label="Filter by Department" value={filters.department_id} onChange={(department_id) => { setFilters({ ...filters, department_id }); setForm({ ...form, person_id: "" }); }} rows={(data.departments || []).filter((row) => row.active)} />
+            <SearchableSelect
+              label={`Available Asset (${assignableAssets.length})`}
+              value={form.asset_id}
+              onChange={(asset_id) => setForm({ ...form, asset_id })}
+              rows={assignableAssets}
+              labelKey={(row) => `${row.asset_tag} - ${row.name}${row.category_name ? ` (${row.category_name})` : ""}`}
+              placeholder="Search asset tag or name"
+              required
+            />
+            <SearchableSelect
+              label={`Assign To (${assignablePeople.length})`}
+              value={form.person_id}
+              onChange={(person_id) => setForm({ ...form, person_id })}
+              rows={assignablePeople}
+              labelKey={(row) => `${row.full_name}${row.department_name ? ` (${row.department_name})` : ""}`}
+              placeholder="Search employee name"
+              required
+            />
             <DateInput label="Assigned On" value={form.assigned_on} onChange={(assigned_on) => setForm({ ...form, assigned_on })} required />
             <DateInput label="Expected Return" value={form.expected_return_on} onChange={(expected_return_on) => setForm({ ...form, expected_return_on })} />
             <label className="span-2"><span>Notes</span><textarea value={form.notes} onChange={(event) => setForm({ ...form, notes: event.target.value })} /></label>
@@ -796,6 +831,9 @@ function Reports({ data }) {
   return (
     <>
       <Heading title="Reports" subtitle="Weekly inventory report." action={<button className="button" onClick={download}>Download CSV</button>} />
+      <InventoryCategoryReport rows={sections.inventory_by_category || []} />
+      <ValueSummaryReport rows={sections.inventory_value_summary || []} />
+      <NonWorkingAssetReport rows={sections.non_working_assets || []} />
       <ReportSection title="Overdue" rows={sections.overdue || []} />
       <ReportSection title="Due This Week" rows={sections.due_soon || []} />
       <ReportSection title="Assigned In Range" rows={sections.assigned_in_range || []} />
@@ -805,6 +843,51 @@ function Reports({ data }) {
       <AssetReportSection title="Assets Under Maintenance" rows={sections.maintenance_assets || []} />
       <ReportSection title="Returned Assets Report" rows={sections.returned_assets || []} />
     </>
+  );
+}
+
+function InventoryCategoryReport({ rows }) {
+  return (
+    <section className="panel">
+      <div className="panel-header"><h2>Current Inventory By Category</h2></div>
+      <DataTable columns={["Category", "Total", "Available", "Assigned", "Maintenance", "Retired", "Value"]} rows={rows} render={(row) => [
+        row.category_name || "Unassigned",
+        row.total_assets || 0,
+        row.available_assets || 0,
+        row.assigned_assets || 0,
+        row.maintenance_assets || 0,
+        row.retired_assets || 0,
+        formatMoney(row.total_value),
+      ]} />
+    </section>
+  );
+}
+
+function ValueSummaryReport({ rows }) {
+  return (
+    <section className="panel">
+      <div className="panel-header"><h2>Inventory Value Summary</h2></div>
+      <DataTable columns={["Metric", "Assets", "Amount"]} rows={rows} render={(row) => [
+        row.metric,
+        row.asset_count || 0,
+        formatMoney(row.amount),
+      ]} />
+    </section>
+  );
+}
+
+function NonWorkingAssetReport({ rows }) {
+  return (
+    <section className="panel">
+      <div className="panel-header"><h2>Non-working Assets</h2></div>
+      <DataTable columns={["Asset", "Category", "Status", "Condition", "Reason"]} rows={rows} render={(row) => [
+        `${row.asset_tag} - ${row.name}`,
+        row.category_name || "",
+        <StatusChip value={row.status_name || title(row.status)} kind={row.status_kind || row.status} />,
+        row.condition || "",
+        row.reason || row.notes || "Not specified",
+      ]} />
+    </section>
   );
 }
 
@@ -966,6 +1049,24 @@ function Select({ label, value, onChange, rows, labelKey = (row) => row.name, re
   );
 }
 
+function SearchableSelect({ label, value, onChange, rows, labelKey = (row) => row.name, placeholder = "Search", required = false }) {
+  const [query, setQuery] = useState("");
+  const clean = query.trim().toLowerCase();
+  const selected = rows.find((row) => String(row.id) === String(value));
+  const filtered = rows.filter((row) => !clean || labelKey(row).toLowerCase().includes(clean));
+  const visibleRows = selected && !filtered.some((row) => row.id === selected.id) ? [selected, ...filtered] : filtered;
+  return (
+    <label className="searchable-select">
+      <span>{label}</span>
+      <input value={query} placeholder={placeholder} onChange={(event) => setQuery(event.target.value)} />
+      <select value={value || ""} onChange={(event) => onChange(event.target.value)} required={required}>
+        <option value="">{visibleRows.length ? "Select" : "No matching records"}</option>
+        {visibleRows.map((row) => <option key={row.id} value={row.id}>{labelKey(row)}</option>)}
+      </select>
+    </label>
+  );
+}
+
 function DateInput({ label, value, onChange, required = false }) {
   const [text, setText] = useState(formatDate(value));
   const [open, setOpen] = useState(false);
@@ -1120,6 +1221,15 @@ function formatDate(value) {
   const [year, month, day] = String(value).slice(0, 10).split("-");
   if (!year || !month || !day) return value;
   return `${day}/${month}/${year}`;
+}
+
+function formatMoney(value) {
+  const amount = Number(value || 0);
+  return amount.toLocaleString("en-IN", {
+    style: "currency",
+    currency: "INR",
+    maximumFractionDigits: amount % 1 === 0 ? 0 : 2,
+  });
 }
 
 function parseDisplayDate(value) {
