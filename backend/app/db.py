@@ -488,7 +488,13 @@ def create_postgres_search_indexes(conn: sqlite3.Connection) -> None:
         ON assets USING GIN (
             to_tsvector(
                 'english',
-                concat_ws(' ', asset_tag, name, serial_number, condition, notes, status, location)
+                COALESCE(asset_tag, '') || ' ' ||
+                COALESCE(name, '') || ' ' ||
+                COALESCE(serial_number, '') || ' ' ||
+                COALESCE(condition, '') || ' ' ||
+                COALESCE(notes, '') || ' ' ||
+                COALESCE(status, '') || ' ' ||
+                COALESCE(location, '')
             )
         )
         """
@@ -497,7 +503,13 @@ def create_postgres_search_indexes(conn: sqlite3.Connection) -> None:
         """
         CREATE INDEX IF NOT EXISTS idx_people_search_document
         ON people USING GIN (
-            to_tsvector('english', concat_ws(' ', full_name, email, phone, external_company))
+            to_tsvector(
+                'english',
+                COALESCE(full_name, '') || ' ' ||
+                COALESCE(email, '') || ' ' ||
+                COALESCE(phone, '') || ' ' ||
+                COALESCE(external_company, '')
+            )
         )
         """
     )
