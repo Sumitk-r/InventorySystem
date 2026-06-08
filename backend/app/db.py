@@ -479,6 +479,30 @@ def migrate_existing_users(conn: sqlite3.Connection) -> None:
     add_column_if_missing(conn, "users", "person_id", "INTEGER REFERENCES people(id) ON DELETE SET NULL")
 
 
+def create_postgres_search_indexes(conn: sqlite3.Connection) -> None:
+    if not getattr(conn, "is_postgres", False):
+        return
+    conn.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_assets_search_document
+        ON assets USING GIN (
+            to_tsvector(
+                'english',
+                concat_ws(' ', asset_tag, name, serial_number, condition, notes, status, location)
+            )
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_people_search_document
+        ON people USING GIN (
+            to_tsvector('english', concat_ws(' ', full_name, email, phone, external_company))
+        )
+        """
+    )
+
+
 def init_db() -> None:
     if not DATABASE_URL:
         DB_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -487,6 +511,7 @@ def init_db() -> None:
         seed_master_data(conn)
         migrate_existing_users(conn)
         migrate_existing_assets(conn)
+        create_postgres_search_indexes(conn)
         conn.commit()
 
 

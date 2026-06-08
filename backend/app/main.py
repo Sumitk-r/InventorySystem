@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .db import init_db
-from .routes import assets, assignments, auth, masters, organization, reports
+from .routes import assets, assignments, auth, masters, organization, reports, search
 
 
 DEFAULT_CORS_ORIGINS = [
@@ -39,6 +39,7 @@ app.include_router(organization.router, prefix="/api")
 app.include_router(assets.router, prefix="/api")
 app.include_router(assignments.router, prefix="/api")
 app.include_router(reports.router, prefix="/api")
+app.include_router(search.router, prefix="/api")
 
 
 @app.get("/api/health")

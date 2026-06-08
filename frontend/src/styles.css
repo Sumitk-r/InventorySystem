@@ -158,6 +158,7 @@ nav {
 .nav-icon[data-icon="people"]::before { content: "P"; }
 .nav-icon[data-icon="asset"]::before { content: "A"; }
 .nav-icon[data-icon="assign"]::before { content: "AS"; font-size: 10px; }
+.nav-icon[data-icon="search"]::before { content: "F"; }
 .nav-icon[data-icon="report"]::before { content: "R"; }
 .nav-icon[data-icon="cat"]::before { content: "C"; }
 .nav-icon[data-icon="status"]::before { content: "S"; }
@@ -861,6 +862,13 @@ textarea:focus {
   background: #fff;
 }
 
+.search-panel {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) auto;
+  gap: 12px;
+  align-items: end;
+}
+
 .modal-backdrop {
   position: fixed;
   z-index: 40;
@@ -1178,7 +1186,8 @@ td strong span {
   }
 
   .chart-grid,
-  .filter-bar {
+  .filter-bar,
+  .search-panel {
     grid-template-columns: 1fr;
   }
 

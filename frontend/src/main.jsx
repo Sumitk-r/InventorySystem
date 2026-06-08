@@ -27,6 +27,7 @@ const navIcons = {
   people: "people",
   assets: "asset",
   assignments: "assign",
+  search: "search",
   reports: "report",
   categories: "cat",
   statuses: "status",
@@ -191,6 +192,7 @@ function Sidebar({ page, setPage, user }) {
     ["people", "People"],
     ["assets", "Assets"],
     ["assignments", "Assignments"],
+    ["search", "Search"],
     ["reports", "Reports"],
   ];
   const masters = [
@@ -228,6 +230,7 @@ function Page({ page, data, user, mutate, setPage }) {
   if (page === "people") return <People {...props} />;
   if (page === "assets") return <Assets {...props} />;
   if (page === "assignments") return <Assignments {...props} />;
+  if (page === "search") return <SearchPage />;
   if (page === "reports") return <Reports {...props} />;
   if (page === "categories") return <MasterSimple {...props} title="Categories" rows={data.categories || []} endpoint="/masters/categories" placeholder="Printer, Tablet, Router" />;
   if (page === "statuses") return <Statuses {...props} />;
@@ -818,6 +821,65 @@ function Assignments({ data, user, mutate }) {
           formatDate(row.returned_on),
           row.return_condition || "",
         ]} />
+      </section>
+    </>
+  );
+}
+
+function SearchPage() {
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState([]);
+  const [searched, setSearched] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  async function submit(event) {
+    event.preventDefault();
+    const clean = query.trim();
+    if (clean.length < 2) return;
+    setLoading(true);
+    setError("");
+    setSearched(true);
+    try {
+      const rows = await api(`/search?q=${encodeURIComponent(clean)}`);
+      setResults(rows);
+    } catch (err) {
+      setResults([]);
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <>
+      <Heading title="Search" subtitle="Find assets by tag, name, category, location, person, status, condition, or notes." />
+      <section className="panel">
+        <form className="search-panel" onSubmit={submit}>
+          <label>
+            <span>Global Search</span>
+            <input value={query} placeholder="Example: damaged laptop in IT closet" onChange={(event) => setQuery(event.target.value)} />
+          </label>
+          <button className="button primary" disabled={loading}>{loading ? "Searching" : "Search"}</button>
+        </form>
+        {error && <div className="flash error">{error}</div>}
+      </section>
+      <section className="panel">
+        <div className="panel-header"><h2>Search Results</h2></div>
+        <DataTable
+          columns={["Asset", "Category", "Status", "Location", "Assigned To", "Condition", "Notes"]}
+          rows={results}
+          emptyTitle={searched ? "No matching assets found" : "Search across inventory records"}
+          render={(row) => [
+            <strong>{row.asset_tag}<span>{row.name}</span></strong>,
+            row.category_name || "",
+            <StatusChip value={row.status_name || title(row.status_kind)} kind={row.status_kind} />,
+            row.location_name || "",
+            row.assigned_to || "",
+            row.condition || "",
+            row.notes || "",
+          ]}
+        />
       </section>
     </>
   );
