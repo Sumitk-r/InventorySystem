@@ -27,11 +27,12 @@ export async function api(path, options = {}) {
   });
   if (!response.ok) {
     let detail = `Request failed with ${response.status}`;
+    const text = await response.text();
     try {
-      const error = await response.json();
+      const error = JSON.parse(text);
       detail = error.detail || detail;
     } catch {
-      detail = await response.text();
+      detail = text || detail;
     }
     throw new Error(detail);
   }
